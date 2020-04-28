@@ -1,0 +1,30 @@
+
+In your example waitresource="KEY: 6:72057594090487808 (d900ed5a6cc6)
+
+1) Database - retrieve the database involved in the deadlock with
+
+SELECT * FROM sys.databases WHERE database_id IN (6)
+
+
+2) Table or Index - retrieve the table or index involved in the deadlock
+
+SELECT b.name AS TableName, 
+       c.name AS IndexName, c.type_desc AS IndexType, * 
+FROM sys.partitions a
+INNER JOIN sys.objects b 
+   ON a.object_id = b.object_id
+INNER JOIN sys.indexes c 
+   ON a.object_id = c.object_id  AND a.index_id = c.index_id
+WHERE partition_id IN ('72057594090487808')
+
+
+3) Exact Row - retrieve the exact row or page, in your specific case the wait resource was a KEY, so you search the "column" %%lockres%% (yes the column name is actually %%lockres%%). If your table is not too out of date or if it is not a DELETE operation, then you will find the exact row from that hash, after you have determined which table that "partition id" or "hobt_id" is from then alter and run the below code (disclaimer - the hashes and page locations may have changed by the time you are doing the debugging, though unlikely with the key hashes)
+
+SELECT 
+   sys.fn_PhysLocFormatter(%%physloc%%) AS PageResource, 
+   %%lockres%% AS LockResource, *
+FROM InsertTableNameFromStep2Here
+WHERE %%lockres%% IN ('(d900ed5a6cc6)')
+
+
+Keep in mind that usually 2 resources are conflicting which caused the deadlock. However, it doesn't necessarily have to be both of the statements provided in the deadlock graph which is doing both of the locking. It is also possible that a statement prior, but within the same transaction (but not identified in the deadlock graph) locked 1 of the 2 resources. But 1 of the 2 statements in the deadlock is definitely involved in locking 1 of the 2 resources causing the deadlock at the time the deadlock was logged.
